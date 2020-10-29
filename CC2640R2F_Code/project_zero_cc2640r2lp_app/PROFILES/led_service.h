@@ -91,6 +91,14 @@ extern "C"
 #define LS_LED2_LEN                1
 #define LS_LED2_LEN_MIN            1
 
+// Fade Characteristic defines
+#define LS_FADE_ID                 3
+#define LS_FADE_UUID               0x1114
+#define LS_FADE_UUID_BASE128(uuid) 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+    0xB0, 0x00, 0x40, 0x51, 0x04, LO_UINT16(uuid), HI_UINT16(uuid), 0x00, 0xF0
+#define LS_FADE_LEN                1
+#define LS_FADE_LEN_MIN            1
+
 /*********************************************************************
  * TYPEDEFS
  */

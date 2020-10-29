@@ -100,6 +100,12 @@ CONST uint8_t ls_LED2UUID[ATT_UUID_SIZE] =
  LS_LED1_UUID_BASE128(LS_LED2_UUID)
 };
 
+// Fade UUID
+CONST uint8_t ls_FADEUUID[ATT_UUID_SIZE] =
+{
+ LS_FADE_UUID_BASE128(LS_FADE_UUID)
+};
+
 
 /*********************************************************************
  * LOCAL VARIABLES
@@ -144,6 +150,16 @@ static uint8_t ls_LED2Val[LS_LED2_LEN] = {0};
 
 // Length of data in characteristic "LED2" Value variable, initialized to minimal size.
 static uint16_t ls_LED2ValLen = LS_LED2_LEN_MIN;
+
+
+// Characteristic "FADE" Properties (for declaration)
+static uint8_t ls_FADEProps = GATT_PROP_READ | GATT_PROP_WRITE | GATT_PROP_WRITE_NO_RSP;
+
+// Characteristic "FADE" Value variable
+static uint8_t ls_FADEVal[LS_FADE_LEN] = {0};
+
+// Length of data in characteristic "FADE" Value variable, initialized to minimal size.
+static uint16_t ls_FADEValLen = LS_FADE_LEN_MIN;
 
 
 
@@ -195,13 +211,27 @@ static gattAttribute_t LED_ServiceAttrTbl[] =
         0,
         &ls_LED2Props
       },
-        // LED2 Characteristic Value
+        // FADE Characteristic Value
         {
           { ATT_UUID_SIZE, ls_LED2UUID },
           GATT_PERMIT_READ | GATT_PERMIT_WRITE | GATT_PERMIT_WRITE,
           0,
           ls_LED2Val
         },
+        // FADE Characteristic Declaration
+        {
+          { ATT_BT_UUID_SIZE, characterUUID },
+          GATT_PERMIT_READ,
+          0,
+          &ls_FADEProps
+        },
+          // FADE Characteristic Value
+          {
+            { ATT_UUID_SIZE, ls_FADEUUID },
+            GATT_PERMIT_READ | GATT_PERMIT_WRITE | GATT_PERMIT_WRITE,
+            0,
+            ls_FADEVal
+          },
 };
 
 /*********************************************************************
@@ -313,6 +343,14 @@ bStatus_t LedService_SetParameter( uint8_t param, uint16_t len, void *value )
       Log_info2("SetParameter : %s len: %d", (IArg)"LED2", (IArg)len);
       break;
 
+    case LS_FADE_ID:
+      pAttrVal  =  ls_FADEVal;
+      pValLen   = &ls_FADEValLen;
+      valMinLen =  LS_FADE_LEN_MIN;
+      valMaxLen =  LS_FADE_LEN;
+      Log_info2("SetParameter : %s len: %d", (IArg)"FADE", (IArg)len);
+      break;
+
     default:
       Log_error1("SetParameter: Parameter #%d not valid.", (IArg)param);
       return INVALIDPARAMETER;
@@ -368,6 +406,12 @@ bStatus_t LedService_GetParameter( uint8_t param, uint16_t *len, void *value )
       Log_info2("GetParameter : %s returning %d bytes", (IArg)"LED2", (IArg)*len);
       break;
 
+    case LS_FADE_ID:
+      *len = MIN(*len, ls_FADEValLen);
+      memcpy(value, ls_FADEVal, *len);
+      Log_info2("GetParameter : %s returning %d bytes", (IArg)"FADE", (IArg)*len);
+      break;
+
     default:
       Log_error1("GetParameter: Parameter #%d not valid.", (IArg)param);
       ret = INVALIDPARAMETER;
@@ -406,6 +450,10 @@ static uint8_t LED_Service_findCharParamId(gattAttribute_t *pAttr)
   // Is this attribute in "LED2"?
   else if ( ATT_UUID_SIZE == pAttr->type.len && !memcmp(pAttr->type.uuid, ls_LED2UUID, pAttr->type.len))
     return LS_LED2_ID;
+
+  // Is this attribute in "FADE"?
+  else if ( ATT_UUID_SIZE == pAttr->type.len && !memcmp(pAttr->type.uuid, ls_FADEUUID, pAttr->type.len))
+    return LS_FADE_ID;
 
   else
     return 0xFF; // Not found. Return invalid.
@@ -465,6 +513,17 @@ static bStatus_t LED_Service_ReadAttrCB( uint16_t connHandle, gattAttribute_t *p
 
       Log_info4("ReadAttrCB : %s connHandle: %d offset: %d method: 0x%02x",
                  (IArg)"LED2",
+                 (IArg)connHandle,
+                 (IArg)offset,
+                 (IArg)method);
+      /* Other considerations for LED1 can be inserted here */
+      break;
+
+    case LS_FADE_ID:
+      valueLen = ls_FADEValLen;
+
+      Log_info4("ReadAttrCB : %s connHandle: %d offset: %d method: 0x%02x",
+                 (IArg)"FADE",
                  (IArg)connHandle,
                  (IArg)offset,
                  (IArg)method);
@@ -554,6 +613,20 @@ static bStatus_t LED_Service_WriteAttrCB( uint16_t connHandle, gattAttribute_t *
 
       Log_info5("WriteAttrCB : %s connHandle(%d) len(%d) offset(%d) method(0x%02x)",
                  (IArg)"LED2",
+                 (IArg)connHandle,
+                 (IArg)len,
+                 (IArg)offset,
+                 (IArg)method);
+      /* Other considerations for LED2 can be inserted here */
+      break;
+
+    case LS_FADE_ID:
+      writeLenMin  = LS_FADE_LEN_MIN;
+      writeLenMax  = LS_FADE_LEN;
+      pValueLenVar = &ls_FADEValLen;
+
+      Log_info5("WriteAttrCB : %s connHandle(%d) len(%d) offset(%d) method(0x%02x)",
+                 (IArg)"FADE",
                  (IArg)connHandle,
                  (IArg)len,
                  (IArg)offset,

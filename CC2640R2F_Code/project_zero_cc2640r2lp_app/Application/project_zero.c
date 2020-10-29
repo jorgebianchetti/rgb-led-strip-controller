@@ -243,15 +243,24 @@ static PIN_State buttonPinState;
 /* PWM driver variables */
 PWM_Handle pwmHandle_IO5;
 PWM_Params pwmParams_IO5;
-uint32_t   dutyValue_IO5;
+uint32_t   dutyValue_IO5 = 0;
+uint8_t    flagLed_IO5 = 0;
 
 PWM_Handle pwmHandle_IO6;
 PWM_Params pwmParams_IO6;
-uint32_t   dutyValue_IO6;
+uint32_t   dutyValue_IO6 = 0;
+uint8_t    flagLed_IO6 = 0;
 
 PWM_Handle pwmHandle_IO7;
 PWM_Params pwmParams_IO7;
-uint32_t   dutyValue_IO7;
+uint32_t   dutyValue_IO7 = 0;
+uint8_t    flagLed_IO7 = 0;
+
+uint8_t fadeFlag = 0;
+
+// Clock config
+Clock_Struct clk0Struct;
+Clock_Handle clk0Handle;
 
 /*
  * Initial LED pin configuration table
@@ -312,6 +321,9 @@ static void user_gapBondMgr_pairStateCB(uint16_t connHandle, uint8_t state,
 
 static void buttonDebounceSwiFxn(UArg buttonId);
 static void user_handleButtonPress(button_state_t *pState);
+
+Void clk0Fxn(UArg arg0);
+static void stopFadeClock(void);
 
 // Generic callback handlers for value changes in services.
 static void user_service_ValueChangeCB( uint16_t connHandle, uint16_t svcUuid, uint8_t paramID, uint8_t *pValue, uint16_t len );
@@ -519,7 +531,8 @@ static void ProjectZero_init(void)
   PWM_Params_init(&pwmParams_IO5);
   pwmParams_IO5.idleLevel = PWM_IDLE_LOW;      // Output low when PWM is not running
   pwmParams_IO5.periodUnits = PWM_PERIOD_HZ;   // Period is in Hz
-  pwmParams_IO5.periodValue = 1e6;             // 1MHz
+//  pwmParams_IO5.periodValue = 1e6;             // 1MHz
+  pwmParams_IO5.periodValue = 1e3;             // 1kHz
   pwmParams_IO5.dutyUnits = PWM_DUTY_FRACTION; // Duty is in fractional percentage
   pwmParams_IO5.dutyValue = 0;                 // 0% initial duty cycle
   // Open the PWM instance
@@ -534,7 +547,8 @@ static void ProjectZero_init(void)
   PWM_Params_init(&pwmParams_IO6);
   pwmParams_IO6.idleLevel = PWM_IDLE_LOW;      // Output low when PWM is not running
   pwmParams_IO6.periodUnits = PWM_PERIOD_HZ;   // Period is in Hz
-  pwmParams_IO6.periodValue = 1e6;             // 1MHz
+//  pwmParams_IO6.periodValue = 1e6;             // 1MHz
+  pwmParams_IO6.periodValue = 1e3;             // 1kHz
   pwmParams_IO6.dutyUnits = PWM_DUTY_FRACTION; // Duty is in fractional percentage
   pwmParams_IO6.dutyValue = 0;                 // 0% initial duty cycle
   // Open the PWM instance
@@ -549,7 +563,8 @@ static void ProjectZero_init(void)
   PWM_Params_init(&pwmParams_IO7);
   pwmParams_IO7.idleLevel = PWM_IDLE_LOW;      // Output low when PWM is not running
   pwmParams_IO7.periodUnits = PWM_PERIOD_HZ;   // Period is in Hz
-  pwmParams_IO7.periodValue = 1e6;             // 1MHz
+//  pwmParams_IO7.periodValue = 1e6;             // 1MHz
+  pwmParams_IO7.periodValue = 1e3;             // 1kHz
   pwmParams_IO7.dutyUnits = PWM_DUTY_FRACTION; // Duty is in fractional percentage
   pwmParams_IO7.dutyValue = 0;                 // 0% initial duty cycle
   // Open the PWM instance
@@ -592,6 +607,16 @@ static void ProjectZero_init(void)
   Clock_construct(&button1DebounceClock, buttonDebounceSwiFxn,
                   50 * (1000/Clock_tickPeriod),
                   &clockParams);
+
+  Clock_Params clkParams;
+  Clock_Params_init(&clkParams);
+
+  clkParams.period = 1000;
+  clkParams.startFlag = FALSE;
+  Clock_construct(&clk0Struct, (Clock_FuncPtr)clk0Fxn,
+                  1000, &clkParams);
+
+  clk0Handle = Clock_handle(&clk0Struct);
 
   // ******************************************************************
   // BLE Stack initialization
@@ -679,6 +704,7 @@ static void ProjectZero_init(void)
   LedService_SetParameter(LS_LED0_ID, LS_LED0_LEN, initVal);
   LedService_SetParameter(LS_LED1_ID, LS_LED1_LEN, initVal);
   LedService_SetParameter(LS_LED2_ID, LS_LED2_LEN, initVal);
+  LedService_SetParameter(LS_FADE_ID, LS_FADE_LEN, initVal);
 
   // Initalization of characteristics in Button_Service that can provide data.
   ButtonService_SetParameter(BS_BUTTON0_ID, BS_BUTTON0_LEN, initVal);
@@ -980,13 +1006,73 @@ static void user_handleButtonPress(button_state_t *pState)
       ButtonService_SetParameter(BS_BUTTON0_ID,
                                  sizeof(pState->state),
                                  &pState->state);
+
+      Clock_start(clk0Handle);
+      fadeFlag = 1;
+
       break;
     case Board_BUTTON1:
       ButtonService_SetParameter(BS_BUTTON1_ID,
                                  sizeof(pState->state),
                                  &pState->state);
+
+      stopFadeClock();
       break;
   }
+}
+
+Void clk0Fxn(UArg arg0)
+{
+    if(dutyValue_IO5 >= 100) flagLed_IO5 = 1;
+    else if(dutyValue_IO5 <= 0) flagLed_IO5 = 0;
+
+    if(dutyValue_IO6 == 100) flagLed_IO6 = 1;
+    else if(dutyValue_IO6 == 0) flagLed_IO6 = 0;
+
+    if(dutyValue_IO7 == 100) flagLed_IO7 = 1;
+    else if(dutyValue_IO7 == 0) flagLed_IO7 = 0;
+
+    uint32_t dutyValue_IO5_aux = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * dutyValue_IO5) / 100);
+    PWM_setDuty(pwmHandle_IO5, dutyValue_IO5_aux);
+
+    uint32_t dutyValue_IO6_aux = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * dutyValue_IO6) / 100);
+    PWM_setDuty(pwmHandle_IO6, dutyValue_IO6_aux);
+
+    uint32_t dutyValue_IO7_aux = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * dutyValue_IO7) / 100);
+    PWM_setDuty(pwmHandle_IO7, dutyValue_IO7_aux);
+
+    if(!flagLed_IO5 && !flagLed_IO6 && !flagLed_IO7){
+        dutyValue_IO5++;
+    }else if(flagLed_IO5 && !flagLed_IO6 && !flagLed_IO7){
+        dutyValue_IO6++;
+    }else if(flagLed_IO5 && flagLed_IO6 && !flagLed_IO7){
+        dutyValue_IO5--;
+    }else if(!flagLed_IO5 && flagLed_IO6 && !flagLed_IO7){
+        dutyValue_IO7++;
+    }else if(!flagLed_IO5 && flagLed_IO6 && flagLed_IO7){
+        dutyValue_IO6--;
+    }else if(!flagLed_IO5 && !flagLed_IO6 && flagLed_IO7){
+        dutyValue_IO5++;
+    }else if(flagLed_IO5 && !flagLed_IO6 && flagLed_IO7){
+        dutyValue_IO7--;
+    }
+}
+
+static void stopFadeClock(void){
+    Clock_stop(clk0Handle);
+
+    flagLed_IO5 = 0;
+    flagLed_IO6 = 0;
+    flagLed_IO7 = 0;
+
+    dutyValue_IO5 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * 0) / 100);
+    PWM_setDuty(pwmHandle_IO5, dutyValue_IO5);
+
+    dutyValue_IO6 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * 0) / 100);
+    PWM_setDuty(pwmHandle_IO6, dutyValue_IO6);
+
+    dutyValue_IO7 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * 0) / 100);
+    PWM_setDuty(pwmHandle_IO7, dutyValue_IO7);
 }
 
 /*
@@ -1032,6 +1118,10 @@ void user_LedService_ValueChangeHandler(char_data_t *pCharData)
       // -------------------------
       // Set the output value equal to the received value. 0 is off, not 0 is on
 //      PIN_setOutputValue(ledPinHandle, Board_RLED, pCharData->data[0]);
+      if(fadeFlag) {
+          stopFadeClock();
+          fadeFlag = 0;
+      }
       dutyValue_IO6 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * (pCharData->data[0] > 100 ? 100 : pCharData->data[0])) / 100);
       PWM_setDuty(pwmHandle_IO6, dutyValue_IO6);
       Log_info2("Turning %s %s",
@@ -1049,6 +1139,10 @@ void user_LedService_ValueChangeHandler(char_data_t *pCharData)
       // -------------------------
       // Set the output value equal to the received value. 0 is off, not 0 is on
 //      PIN_setOutputValue(ledPinHandle, Board_GLED, pCharData->data[0]);
+      if(fadeFlag) {
+          stopFadeClock();
+          fadeFlag = 0;
+      }
       dutyValue_IO7 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * (pCharData->data[0] > 100 ? 100 : pCharData->data[0])) / 100);
       PWM_setDuty(pwmHandle_IO7, dutyValue_IO7);
       Log_info2("Turning %s %s",
@@ -1066,10 +1160,55 @@ void user_LedService_ValueChangeHandler(char_data_t *pCharData)
       // -------------------------
       // Set the output value equal to the received value. 0 is off, not 0 is on
 //      PIN_setOutputValue(ledPinHandle, IOID_5, pCharData->data[0]);
+      if(fadeFlag) {
+          stopFadeClock();
+          fadeFlag = 0;
+      }
       dutyValue_IO5 = (uint32_t) (((uint64_t) PWM_DUTY_FRACTION_MAX * (pCharData->data[0] > 100 ? 100 : pCharData->data[0])) / 100);
       PWM_setDuty(pwmHandle_IO5, dutyValue_IO5);
       Log_info2("Turning %s %s",
                 (IArg)"\x1b[32mLED2\x1b[0m",
+                (IArg)(pCharData->data[0]?"on":"off"));
+      break;
+
+    case LS_FADE_ID:
+      Log_info3("Value Change msg: %s %s: %s",
+                (IArg)"LED Service",
+                (IArg)"FADE",
+                (IArg)pretty_data_holder);
+
+      // Do something useful with pCharData->data here
+      // -------------------------
+      // Set the output value equal to the received value. 0 is off, not 0 is on
+//      PIN_setOutputValue(ledPinHandle, IOID_5, pCharData->data[0]);
+
+      if(pCharData->data[0] == 1){
+          Clock_setPeriod(clk0Handle, 1600); // 40ms -> 25Hz
+          Clock_start(clk0Handle);
+          fadeFlag = 1;
+      }else if(pCharData->data[0] == 2){
+          Clock_setPeriod(clk0Handle, 1200); // 20ms -> ~80Hz
+          Clock_start(clk0Handle);
+          fadeFlag = 1;
+      }else if(pCharData->data[0] == 3){
+          Clock_setPeriod(clk0Handle, 1000); // 10ms -> 100Hz
+          Clock_start(clk0Handle);
+          fadeFlag = 1;
+      }else if(pCharData->data[0] == 4){
+          Clock_setPeriod(clk0Handle, 500); // 5ms -> 200Hz
+          Clock_start(clk0Handle);
+          fadeFlag = 1;
+      }else if(pCharData->data[0] == 5){
+          Clock_setPeriod(clk0Handle, 250); // 2.5ms -> 400Hz
+          Clock_start(clk0Handle);
+          fadeFlag = 1;
+      }else{
+          stopFadeClock();
+          fadeFlag = 0;
+      }
+
+      Log_info2("Turning %s %s",
+                (IArg)"\x1b[32mFADE\x1b[0m",
                 (IArg)(pCharData->data[0]?"on":"off"));
       break;
 
